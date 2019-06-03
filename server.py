@@ -43,14 +43,17 @@ async def stream_archivation(request):
     await response.prepare(request)
     path = os.path.join('test_photos', request_folder)
     filenames = get_filenames(path)
-    print(type(request))
-    async for chunk in archivate(filenames):
-        if request.transport.is_closing():
-            break
-        logging.debug(response.status)
-        await response.write(chunk)
-        await asyncio.sleep(1)
-    return response
+    try:
+        async for chunk in archivate(filenames):
+            await response.write(chunk)
+            await asyncio.sleep(1)
+        return response
+    except asyncio.CancelledError as err:
+        print('Caught cancelled error from stream archivation')
+        return
+
+
+
 
 
 def get_filenames(path):
@@ -63,12 +66,19 @@ async def archivate(filenames):
     archivate = await asyncio.create_subprocess_shell(args,
                                                       stdout=asyncio.subprocess.PIPE,
                                                       limit=800)
-    while True:
-        chunk = await archivate.stdout.read(800)
-        if not chunk:
-            break
-        logging.debug('Sending archive chunk...')
-        yield chunk
+    try:
+        while True:
+            chunk = await archivate.stdout.read(800)
+            if not chunk:
+                break
+            logging.debug('Sending archive chunk...')
+            yield chunk
+    except asyncio.CancelledError as err:
+        print('Caught Cancelled Error')
+        logging.error(err)
+        archivate.terminate()
+        raise
+
 
 
 async def handle_index_page(request):
